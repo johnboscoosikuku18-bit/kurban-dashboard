@@ -206,9 +206,12 @@
 
 <script>
 // ── KoboToolbox Live Data Integration ────────────────────────────────────────
-const KOBO_TOKEN  = '5af860a56eb105608c166510c3fbf1df62505b14';
-const KOBO_FORM   = 'aPo3twus3F3iUPDkFmy9dZ';
-const KOBO_URL    = `https://kf.kobotoolbox.org/api/v2/assets/${KOBO_FORM}/data/?format=json&limit=5000`;
+// ── Live data via free CORS proxy (no setup needed) ──────────────────────────
+const KOBO_TOKEN = '5af860a56eb105608c166510c3fbf1df62505b14';
+const KOBO_FORM  = 'aPo3twus3F3iUPDkFmy9dZ';
+const KOBO_BASE  = 'https://kf.kobotoolbox.org/api/v2/assets/' + KOBO_FORM + '/data/?format=json&limit=5000';
+// allorigins.win is a free public CORS proxy — no account or setup needed
+const KOBO_URL   = 'https://api.allorigins.win/get?url=' + encodeURIComponent(KOBO_BASE);
 
 // Field name mapping – adjust these if your KoboToolbox column names differ
 const FIELD_MAP = {
@@ -371,25 +374,22 @@ async function fetchKoboData() {
   const statusEl = document.getElementById('data-status');
   statusEl.textContent = '⏳ Loading live data from KoboToolbox…';
   try {
-    const res = await fetch(KOBO_URL, {
-      headers: {
-        'Authorization': `Token ${KOBO_TOKEN}`,
-        'Accept': 'application/json'
-      }
-    });
+    const res = await fetch(KOBO_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
+    const wrapper = await res.json();
+    // allorigins wraps the response in { contents: '...' }
+    const json = JSON.parse(wrapper.contents);
     const results = json.results || json;
-    if (!Array.isArray(results) || results.length === 0) throw new Error('No data returned');
+    if (!Array.isArray(results) || results.length === 0) throw new Error('No records found');
     const records = results.map(normalizeRecord);
-    statusEl.textContent = `✅ Live data loaded · ${records.length} submissions · Last updated: ${new Date().toLocaleTimeString()}`;
+    statusEl.textContent = `✅ Live · ${records.length} submissions · Updated: ${new Date().toLocaleTimeString()}`;
     statusEl.style.color = '#1D9E75';
+    statusEl.style.background = '#e8f5f0';
     renderDashboard(records, 'live');
-    // Auto-refresh every 5 minutes
     setTimeout(fetchKoboData, 5 * 60 * 1000);
   } catch(e) {
-    console.warn('KoboToolbox fetch failed, using cached data:', e.message);
-    statusEl.textContent = `⚠️ Could not reach KoboToolbox (${e.message}) — showing cached data`;
+    console.warn('Live fetch failed:', e.message);
+    statusEl.textContent = `⚠️ Showing cached data (live fetch failed: ${e.message})`;
     statusEl.style.color = '#BA7517';
     renderDashboard(FALLBACK_RECORDS, 'cache');
   }
