@@ -100,21 +100,23 @@
   <span class="badge">📅 Apr 21 – Apr 28, 2026</span>
 </header>
 
+<div id="data-status" style="background:#fff8e8;border-bottom:1px solid #f0e8d0;padding:8px 28px;font-size:12px;color:#BA7517;display:flex;align-items:center;gap:8px;">⏳ Connecting to KoboToolbox…</div>
+
 <main>
   <div class="kpi-row">
     <div class="kpi green">
       <div class="kpi-label">Total applications</div>
-      <div class="kpi-value">122</div>
+      <div class="kpi-value" id="kpi-total">122</div>
       <div class="kpi-sub">submitted via KoBoToolbox</div>
     </div>
     <div class="kpi blue">
       <div class="kpi-label">Beneficiaries requested</div>
-      <div class="kpi-value">33,787</div>
+      <div class="kpi-value" id="kpi-bene">33,787</div>
       <div class="kpi-sub">avg 277 per application</div>
     </div>
     <div class="kpi orange">
       <div class="kpi-label">Districts covered</div>
-      <div class="kpi-value">9</div>
+      <div class="kpi-value" id="kpi-dist">9</div>
       <div class="kpi-sub">across Central Uganda</div>
     </div>
     <div class="kpi amber">
@@ -124,8 +126,8 @@
     </div>
     <div class="kpi purple">
       <div class="kpi-label">Peak day</div>
-      <div class="kpi-value">Apr 28</div>
-      <div class="kpi-sub">41 submissions in one day</div>
+      <div class="kpi-value" id="kpi-peak-day">Apr 28</div>
+      <div class="kpi-sub" id="kpi-peak-n">41 submissions in one day</div>
     </div>
   </div>
 
@@ -138,7 +140,7 @@
     </div>
     <div class="chart-card">
       <h3>By district</h3>
-      <div class="legend">
+      <div class="legend" id="dist-legend">
         <div class="legend-item"><span class="legend-dot" style="background:#1D9E75"></span>Luwero 42</div>
         <div class="legend-item"><span class="legend-dot" style="background:#185FA5"></span>Wakiso 38</div>
         <div class="legend-item"><span class="legend-dot" style="background:#D85A30"></span>Kampala 19</div>
@@ -151,7 +153,7 @@
     </div>
     <div class="chart-card">
       <h3>Institution types</h3>
-      <div class="legend">
+      <div class="legend" id="inst-legend">
         <div class="legend-item"><span class="legend-dot" style="background:#185FA5"></span>Mosques 58</div>
         <div class="legend-item"><span class="legend-dot" style="background:#1D9E75"></span>Schools 26</div>
         <div class="legend-item"><span class="legend-dot" style="background:#D85A30"></span>Community 26</div>
@@ -203,34 +205,203 @@
 </main>
 
 <script>
-// ── Charts ──────────────────────────────────────────────────────────────────
-const gc = '#e5e5e2', tc = '#888';
+// ── KoboToolbox Live Data Integration ────────────────────────────────────────
+const KOBO_TOKEN  = '5af860a56eb105608c166510c3fbf1df62505b14';
+const KOBO_FORM   = 'aPo3twus3F3iUPDkFmy9dZ';
+const KOBO_URL    = `https://kf.kobotoolbox.org/api/v2/assets/${KOBO_FORM}/data/?format=json&limit=5000`;
 
-new Chart(document.getElementById('trendChart'), {
-  type: 'bar',
-  data: {
-    labels: ['Apr 21','Apr 22','Apr 23','Apr 24','Apr 26','Apr 27','Apr 28'],
-    datasets: [{ data: [1,9,29,21,5,16,41], backgroundColor: '#185FA5', borderRadius: 5, borderSkipped: false }]
-  },
-  options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
-    scales: { x:{grid:{color:gc},ticks:{color:tc,font:{size:11}}}, y:{grid:{color:gc},ticks:{color:tc,font:{size:11}},beginAtZero:true} } }
-});
+// Field name mapping – adjust these if your KoboToolbox column names differ
+const FIELD_MAP = {
+  institution:   ['institution_name','institution','name_of_institution','org_name'],
+  district:      ['district','district_name','location_district'],
+  village:       ['village','village_name','location_village','sub_county'],
+  applicant:     ['applicant_name','applicant','full_name','contact_name'],
+  position:      ['position','role','title','applicant_position'],
+  beneficiaries: ['number_of_beneficiaries','beneficiaries','total_beneficiaries','no_of_beneficiaries','beneficiary_count'],
+  date:          ['_submission_time','submission_time','date','date_submitted'],
+};
 
-new Chart(document.getElementById('distChart'), {
-  type: 'doughnut',
-  data: { labels:['Luwero','Wakiso','Kampala','Mukono','Others'],
-    datasets:[{ data:[42,38,19,17,4], backgroundColor:['#1D9E75','#185FA5','#D85A30','#BA7517','#888780'], borderWidth:2, borderColor:'#fff' }] },
-  options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, cutout:'62%' }
-});
+function extractField(row, fieldKey) {
+  for (const key of FIELD_MAP[fieldKey]) {
+    if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+      return row[key];
+    }
+  }
+  // fallback: search for partial key match
+  for (const k of Object.keys(row)) {
+    if (k.toLowerCase().includes(fieldKey.toLowerCase())) return row[k];
+  }
+  return null;
+}
 
-new Chart(document.getElementById('instChart'), {
-  type: 'doughnut',
-  data: { labels:['Mosques','Schools','Community','Other'],
-    datasets:[{ data:[58,26,26,12], backgroundColor:['#185FA5','#1D9E75','#D85A30','#BA7517'], borderWidth:2, borderColor:'#fff' }] },
-  options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, cutout:'62%' }
-});
+function normalizeRecord(row) {
+  const dateRaw = extractField(row, 'date');
+  const dateStr = dateRaw ? dateRaw.toString().substring(0, 10) : null;
+  const bRaw = extractField(row, 'beneficiaries');
+  return {
+    institution:   extractField(row, 'institution') || '(unknown)',
+    district:      extractField(row, 'district')    || null,
+    village:       extractField(row, 'village')      || null,
+    applicant:     extractField(row, 'applicant')   || null,
+    position:      extractField(row, 'position')    || null,
+    beneficiaries: bRaw ? parseInt(bRaw) || 0 : 0,
+    date:          dateStr,
+  };
+}
 
-// ── Vuln bars ────────────────────────────────────────────────────────────────
+// ── Hardcoded fallback data (used if KoboToolbox is unreachable) ──────────────
+const FALLBACK_RECORDS = [{"institution":"Sweet Valley islamic nursery and primary school","district":null,"village":"BOMBO","applicant":"Ssebunya Hussein","position":"Imaaam","beneficiaries":600,"date":"2026-04-22"},{"institution":"MARIAM JUNIOR SCHOOL","district":"Luweero","village":"NTAWAWULWA","applicant":"FAHAD SSELUMUNYE","position":"ADMINISTRATOR","beneficiaries":245,"date":"2026-04-22"},{"institution":"MASJID NOOR","district":"Luweero","village":"NAMAWOJJA","applicant":"SHK YAHYA WAMMANGA","position":"IMAAM","beneficiaries":320,"date":"2026-04-22"},{"institution":"MASJID SALAF","district":"Luweero","village":"LUNYOLYA","applicant":"IBRAHIM YUSUF KATENDE","position":"ASSISTANT IMAAM","beneficiaries":130,"date":"2026-04-22"},{"institution":"MASJID MARIAM","district":"Luweero","village":"NTAWAWULWA","applicant":"UMAR ABDULKAREEM MUGERWA","position":"IMAAM","beneficiaries":173,"date":"2026-04-22"},{"institution":"Najjanankumbi mosque","district":"Kampala","village":"Najjanankumbi","applicant":"Namaazi Hadija","position":"Commit member","beneficiaries":153,"date":"2026-04-22"},{"institution":"Bill Gates Junior school Nsangi","district":"Wikiso","village":"Katereke","applicant":"Nabbale Hadija","position":"Principal","beneficiaries":60,"date":"2026-04-22"},{"institution":"Fitra Muslim high School","district":"Wakiso","village":"Kigoogwa","applicant":"Kiyemba Hussein","position":"Director","beneficiaries":400,"date":"2026-04-23"},{"institution":"Masjid musa","district":"Luweero","village":"Kibajjwe","applicant":"Muhammad musa","position":"Imaam","beneficiaries":200,"date":"2026-04-23"},{"institution":"Arafah islamic junior school","district":"Wakiso","village":"Gganda nansana","applicant":"Baagalamugagga Mahmood","position":"Headteacher","beneficiaries":250,"date":"2026-04-23"},{"institution":"Masjid aqsaw kapeera","district":"Wakiso","village":"Kapeera","applicant":"ABDUL SHAKURU ISSA SSENOGA","position":"Imamu","beneficiaries":300,"date":"2026-04-23"},{"institution":"Kampala Islamic Secondary School","district":"Wakiso","village":"Kireku","applicant":"Ssemakula Muhammad","position":"Teacher","beneficiaries":500,"date":"2026-04-23"},{"institution":"Masjid Abdul Salam","district":"Wakiso","village":"Kakiri","applicant":"Ssentamu hababi","position":"Imam","beneficiaries":350,"date":"2026-04-23"},{"institution":"Bbale primary school","district":"Wakiso","village":"Kira","applicant":"Mawejje faruk","position":"Headteacher","beneficiaries":350,"date":"2026-04-23"},{"institution":"Masjid Rahman","district":"Kampala","village":"Konge","applicant":"Sserunkuma Musa","position":"Secretary","beneficiaries":180,"date":"2026-04-23"},{"institution":"masjid haqqu","district":"Kampala","village":"Lukuli","applicant":"Luzze Abdulmuminu","position":"Imaam","beneficiaries":500,"date":"2026-04-23"},{"institution":"Twahirah kids junior school","district":"Luweero","village":"Busula","applicant":"Kiyemba hamuza","position":"Director","beneficiaries":200,"date":"2026-04-23"},{"institution":"MASGID MUHAJIRIINA KIGOBE NAMUNGOONA","district":"Kampala","village":"KIGOBE","applicant":"SSEKIMPI HUZAIFAH","position":"IMAAM","beneficiaries":360,"date":"2026-04-23"},{"institution":"Masjid Nkonge","district":"Mukono","village":"Nkonge","applicant":"Kasirye pherouz","position":"Member Masjid Nkonge","beneficiaries":367,"date":"2026-04-23"},{"institution":"Mbogo children's Foundation","district":"Luweero","village":"Bombo","applicant":"Ssekisambu Abdulkarim Mbogo","position":"Founder","beneficiaries":235,"date":"2026-04-23"},{"institution":"Masjid Salam Lubatu","district":"Wakiso","village":"Lubatu Kitezi","applicant":"Abdunoor","position":"Imam","beneficiaries":350,"date":"2026-04-24"},{"institution":"Masjid shuura","district":"Mukono","village":"Ddundu","applicant":"Wakuya Ibrahim","position":"Imam","beneficiaries":500,"date":"2026-04-24"},{"institution":"Masjid latiifa","district":"Mukono","village":"Kyampisi","applicant":"MATAKI SOWED","position":"Imam","beneficiaries":600,"date":"2026-04-24"},{"institution":"Masjid global Muslim high school","district":"Mukono","village":"Naggalama","applicant":"Wakuya Ibrahim","position":"Deputy adm","beneficiaries":700,"date":"2026-04-24"},{"institution":"Bombo community","district":"Luweero","village":"Namaliga","applicant":"Sirajje kato","position":"Councillor","beneficiaries":800,"date":"2026-04-24"},{"institution":"MARKAZ SUNCITY AL-ISLAMIYYAH","district":"Luweero","village":"SSAMBWE NDEJJE","applicant":"SHK ABDUL-NAASWIR KATEREGGA","position":"DIRECTOR","beneficiaries":250,"date":"2026-04-24"},{"institution":"KISAASI TWAALE","district":"Kampala","village":"Kisaasi","applicant":"Galimaka Nadawi","position":"County Sheikh","beneficiaries":1000,"date":"2026-04-27"},{"institution":"Misc day and boarding primary school","district":"Wakiso","village":"Bukasa","applicant":"Nadawi kaluuma","position":"Director","beneficiaries":900,"date":"2026-04-27"},{"institution":"Masgid Omar Bombo town","district":"Luwero","village":"Namaliga west","applicant":"Nsamba Ahmed","position":"Imaam","beneficiaries":600,"date":"2026-04-27"},{"institution":"SWEET VALLEY SCHOOL","district":"Luwero","village":"Kibajwe","applicant":"MATOVU ABDULRAHMAN","position":"IMAAM","beneficiaries":400,"date":"2026-04-28"},{"institution":"KALEERWE COMMUNITY","district":"Wakiso","village":"Kavule","applicant":"Ubaidha","position":"Imaam","beneficiaries":700,"date":"2026-04-28"},{"institution":"Masjid kasangati","district":"Wakiso","village":"Kasangati","applicant":"Mubiito","position":"Imaam","beneficiaries":625,"date":"2026-04-28"},{"institution":"JJOKOLERA COMMUNITY","district":"Wakiso","village":"Jjokolera","applicant":"Jaffar","position":"Cordinator","beneficiaries":550,"date":"2026-04-28"},{"institution":"UGANDA MUSLIM WOMEN ASSOCIATION","district":"Wakiso","village":"Kaleerwe","applicant":"Hajjat Asia","position":"Chairperson","beneficiaries":500,"date":"2026-04-28"},{"institution":"KING FAHAD","district":"Kampala","village":"Busega","applicant":"ABDUL MAJID","position":"Teacher","beneficiaries":500,"date":"2026-04-28"},{"institution":"Mecca Muslim Secondary School","district":"Luwero","village":"Kigulu Zone","applicant":"Mawube Abdul Salamu","position":"Director","beneficiaries":200,"date":"2026-04-28"}];
+
+// ── Compute stats from records ────────────────────────────────────────────────
+function computeStats(records) {
+  const total = records.length;
+  const totalBene = records.reduce((s, r) => s + (r.beneficiaries || 0), 0);
+
+  // District counts (normalize spelling)
+  const distMap = {};
+  records.forEach(r => {
+    let d = (r.district || 'Unknown').trim();
+    d = d.replace(/luweero/i,'Luwero').replace(/wikiso/i,'Wakiso').replace(/wakiso district/i,'Wakiso');
+    distMap[d] = (distMap[d] || 0) + 1;
+  });
+  const distSorted = Object.entries(distMap).sort((a,b) => b[1]-a[1]);
+
+  // Daily submissions
+  const dayMap = {};
+  records.forEach(r => { if (r.date) dayMap[r.date] = (dayMap[r.date]||0)+1; });
+  const days = Object.entries(dayMap).sort((a,b)=>a[0].localeCompare(b[0]));
+
+  // Peak day
+  const peakDay = days.reduce((p,c) => c[1]>p[1]?c:p, ['',0]);
+
+  // Top beneficiaries
+  const topBene = [...records].sort((a,b)=>(b.beneficiaries||0)-(a.beneficiaries||0)).slice(0,5);
+
+  return { total, totalBene, distSorted, days, peakDay, topBene };
+}
+
+// ── Render all charts & KPIs from data ───────────────────────────────────────
+let trendChartInst, distChartInst, instChartInst;
+
+function renderDashboard(records, source) {
+  const stats = computeStats(records);
+
+  // Update status badge
+  const badge = document.querySelector('.badge');
+  if (source === 'live') {
+    badge.innerHTML = '🟢 Live · ' + stats.total + ' submissions';
+    badge.style.background = '#e8f5f0'; badge.style.color = '#1D9E75';
+  } else {
+    badge.innerHTML = '🗂️ Cached · ' + stats.total + ' submissions';
+  }
+
+  // KPIs
+  document.getElementById('kpi-total').textContent   = stats.total;
+  document.getElementById('kpi-bene').textContent    = stats.totalBene.toLocaleString();
+  document.getElementById('kpi-dist').textContent    = stats.distSorted.length;
+  document.getElementById('kpi-peak-day').textContent = stats.peakDay[0] ? stats.peakDay[0].substring(5).replace('-','/') : '–';
+  document.getElementById('kpi-peak-n').textContent   = stats.peakDay[1] ? stats.peakDay[1]+' submissions' : '';
+
+  // Daily trend chart
+  const gc = '#e5e5e2', tc = '#888';
+  const trendData = { labels: stats.days.map(d=>d[0].substring(5).replace('-','/')), data: stats.days.map(d=>d[1]) };
+  if (trendChartInst) trendChartInst.destroy();
+  trendChartInst = new Chart(document.getElementById('trendChart'), {
+    type:'bar',
+    data:{ labels: trendData.labels, datasets:[{ data: trendData.data, backgroundColor:'#185FA5', borderRadius:5, borderSkipped:false }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ x:{grid:{color:gc},ticks:{color:tc,font:{size:11}}}, y:{grid:{color:gc},ticks:{color:tc,font:{size:11}},beginAtZero:true} } }
+  });
+
+  // District chart
+  const top5dist = stats.distSorted.slice(0,5);
+  const distColors = ['#1D9E75','#185FA5','#D85A30','#BA7517','#888780'];
+  if (distChartInst) distChartInst.destroy();
+  distChartInst = new Chart(document.getElementById('distChart'), {
+    type:'doughnut',
+    data:{ labels: top5dist.map(d=>d[0]), datasets:[{ data: top5dist.map(d=>d[1]), backgroundColor: distColors, borderWidth:2, borderColor:'#fff' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, cutout:'62%' }
+  });
+  // Update district legend
+  const distLegend = document.getElementById('dist-legend');
+  distLegend.innerHTML = top5dist.map((d,i)=>`<div class="legend-item"><span class="legend-dot" style="background:${distColors[i]}"></span>${d[0]} ${d[1]}</div>`).join('');
+
+  // Institution type chart (keyword-based)
+  const instTypes = {Mosques:0, Schools:0, Community:0, Other:0};
+  records.forEach(r => {
+    const n = (r.institution||'').toLowerCase();
+    if (n.includes('masjid')||n.includes('mosque')||n.includes('masgid')) instTypes.Mosques++;
+    else if (n.includes('school')||n.includes('college')||n.includes('university')||n.includes('markaz')) instTypes.Schools++;
+    else if (n.includes('community')||n.includes('stage')||n.includes('group')||n.includes('association')) instTypes.Community++;
+    else instTypes.Other++;
+  });
+  if (instChartInst) instChartInst.destroy();
+  instChartInst = new Chart(document.getElementById('instChart'), {
+    type:'doughnut',
+    data:{ labels: Object.keys(instTypes), datasets:[{ data: Object.values(instTypes), backgroundColor:['#185FA5','#1D9E75','#D85A30','#BA7517'], borderWidth:2, borderColor:'#fff' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, cutout:'62%' }
+  });
+  const instLegend = document.getElementById('inst-legend');
+  const instColors2 = ['#185FA5','#1D9E75','#D85A30','#BA7517'];
+  instLegend.innerHTML = Object.entries(instTypes).map(([k,v],i)=>`<div class="legend-item"><span class="legend-dot" style="background:${instColors2[i]}"></span>${k} ${v}</div>`).join('');
+
+  // Top beneficiaries
+  document.getElementById('topBene').innerHTML = stats.topBene.map(([name,v,d],i) => {
+    // handle object or array shape
+    const nm = typeof name==='object' ? name.institution : name;
+    const val = typeof name==='object' ? name.beneficiaries : v;
+    const dist = typeof name==='object' ? (name.district||'') : (d||'');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f0ec">
+      <span style="font-size:13px;font-weight:700;color:#aaa;min-width:18px">${i+1}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nm}</div>
+        <div style="font-size:11px;color:#aaa">${dist}</div>
+      </div>
+      <span style="font-size:14px;font-weight:700;color:#1D9E75">${(val||0).toLocaleString()}</span>
+    </div>`;
+  }).join('');
+
+  // Update ALL_RECORDS for AI chat
+  window.ALL_RECORDS = records;
+  window.LIVE_STATS  = stats;
+}
+
+// ── Fetch live data from KoboToolbox ─────────────────────────────────────────
+async function fetchKoboData() {
+  const statusEl = document.getElementById('data-status');
+  statusEl.textContent = '⏳ Loading live data from KoboToolbox…';
+  try {
+    const res = await fetch(KOBO_URL, {
+      headers: {
+        'Authorization': `Token ${KOBO_TOKEN}`,
+        'Accept': 'application/json'
+      }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const results = json.results || json;
+    if (!Array.isArray(results) || results.length === 0) throw new Error('No data returned');
+    const records = results.map(normalizeRecord);
+    statusEl.textContent = `✅ Live data loaded · ${records.length} submissions · Last updated: ${new Date().toLocaleTimeString()}`;
+    statusEl.style.color = '#1D9E75';
+    renderDashboard(records, 'live');
+    // Auto-refresh every 5 minutes
+    setTimeout(fetchKoboData, 5 * 60 * 1000);
+  } catch(e) {
+    console.warn('KoboToolbox fetch failed, using cached data:', e.message);
+    statusEl.textContent = `⚠️ Could not reach KoboToolbox (${e.message}) — showing cached data`;
+    statusEl.style.color = '#BA7517';
+    renderDashboard(FALLBACK_RECORDS, 'cache');
+  }
+}
+
+// ── Charts (initial render with fallback, then live fetch) ───────────────────
+
+// Initial render with fallback data, then attempt live fetch
+renderDashboard(FALLBACK_RECORDS, 'cache');
+fetchKoboData();
+
+// ── Vuln bars (static – from original analysis) ──────────────────────────────
 const vulns = [
   ['Extreme poverty', 38, '#D85A30'],
   ['Widow / widower', 24, '#7F77DD'],
@@ -248,40 +419,23 @@ document.getElementById('vulnBars').innerHTML = vulns.map(([l,v,c]) => `
     <div class="vuln-track"><div class="vuln-fill" style="width:${(v/max)*100}%;background:${c}"></div></div>
   </div>`).join('');
 
-// ── Top beneficiaries ────────────────────────────────────────────────────────
-const topBene = [
-  ['KISAASI TWAALE / Kisaasi county', 1000,'Kampala'],
-  ['Misc day & boarding primary school', 900,'Wakiso'],
-  ['Bombo community', 800,'Luwero'],
-  ['Masjid global Muslim high school', 700,'Mukono'],
-  ['KALEERWE COMMUNITY', 700,'Wakiso'],
-];
-document.getElementById('topBene').innerHTML = topBene.map(([name,v,d],i) => `
-  <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f0ec">
-    <span style="font-size:13px;font-weight:700;color:#aaa;min-width:18px">${i+1}</span>
-    <div style="flex:1;min-width:0">
-      <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</div>
-      <div style="font-size:11px;color:#aaa">${d}</div>
-    </div>
-    <span style="font-size:14px;font-weight:700;color:#1D9E75">${v.toLocaleString()}</span>
-  </div>`).join('');
 
-// ── RAG Data ─────────────────────────────────────────────────────────────────
-const ALL_RECORDS = [{"institution":"Sweet Valley islamic nursery and primary school","district":null,"village":"BOMBO","applicant":"Ssebunya Hussein","position":"Imaaam","beneficiaries":600,"date":"2026-04-22"},{"institution":"MARIAM JUNIOR SCHOOL","district":"Luweero","village":"NTAWAWULWA","applicant":"FAHAD SSELUMUNYE","position":"ADMINISTRATOR","beneficiaries":245,"date":"2026-04-22"},{"institution":"MASJID NOOR","district":"Luweero","village":"NAMAWOJJA","applicant":"SHK YAHYA WAMMANGA","position":"IMAAM","beneficiaries":320,"date":"2026-04-22"},{"institution":"MASJID SALAF","district":"Luweero","village":"LUNYOLYA","applicant":"IBRAHIM YUSUF KATENDE","position":"ASSISTANT IMAAM","beneficiaries":130,"date":"2026-04-22"},{"institution":"MASJID MARIAM","district":"Luweero","village":"NTAWAWULWA","applicant":"UMAR ABDULKAREEM MUGERWA","position":"IMAAM","beneficiaries":173,"date":"2026-04-22"},{"institution":"Najjanankumbi mosque","district":"Kampala","village":"Najjanankumbi","applicant":"Namaazi Hadija","position":"Commit member","beneficiaries":153,"date":"2026-04-22"},{"institution":"Bill Gates Junior school Nsangi","district":"Wikiso","village":"Katereke","applicant":"Nabbale Hadija","position":"Principal","beneficiaries":60,"date":"2026-04-22"},{"institution":"Najjanankumbi mosque","district":"Kampala","village":"Najjanankumbi","applicant":"Namaazi Hadija","position":"Committee member","beneficiaries":153,"date":"2026-04-22"},{"institution":"Fitra Muslim high School","district":"Wakiso","village":"Kigoogwa","applicant":"Kiyemba Hussein","position":"Director","beneficiaries":400,"date":"2026-04-23"},{"institution":"Masjid musa","district":"Luweero","village":"Kibajjwe","applicant":"Muhammad musa","position":"Imaam","beneficiaries":200,"date":"2026-04-23"},{"institution":"pearl of africa radio","district":"Kampala","village":"Bakuli","applicant":"Naava aidah","position":"Sales and marketing manager","beneficiaries":50,"date":"2026-04-23"},{"institution":"Arafah islamic junior school","district":"Wakiso","village":"Gganda nansana","applicant":"Baagalamugagga Mahmood","position":"Headteacher","beneficiaries":250,"date":"2026-04-23"},{"institution":"Masjid aqsaw kapeera","district":"Wakiso","village":"Kapeera","applicant":"ABDUL SHAKURU ISSA SSENOGA","position":"Imamu","beneficiaries":300,"date":"2026-04-23"},{"institution":"Kampala Islamic Secondary School","district":"Wakiso","village":"Kireku","applicant":"Ssemakula Muhammad","position":"Teacher","beneficiaries":500,"date":"2026-04-23"},{"institution":"Masjid Abdul Salam","district":"Wakiso","village":"Kakiri","applicant":"Ssentamu hababi","position":"Imam","beneficiaries":350,"date":"2026-04-23"},{"institution":"Kireka","district":"Luwero","village":"Kireka","applicant":"Shaukhan kirumira","position":"Chairman","beneficiaries":120,"date":"2026-04-23"},{"institution":"Bbale primary school","district":"Wakiso","village":"Kira","applicant":"Mawejje faruk","position":"Headteacher","beneficiaries":350,"date":"2026-04-23"},{"institution":"Voice of africa radio","district":"Kampala","village":"Kololo","applicant":"Naava aidah","position":"Sales executive","beneficiaries":46,"date":"2026-04-23"},{"institution":"God's care disability skilling center Uganda","district":"Wakiso District","village":"Lugoba kazinga area","applicant":"Nankunda Monica","position":"CEO","beneficiaries":200,"date":"2026-04-23"},{"institution":"Masjid Nur","district":"Luwero","village":"Ngcfyjknbbjj","applicant":"Muhammad","position":"Imam","beneficiaries":200,"date":"2026-04-23"},{"institution":"God's care disability skilling center","district":"Wakiso District","village":"Lugoba kazinga area","applicant":"Nankunda Monica","position":"Vision bearer","beneficiaries":200,"date":"2026-04-23"},{"institution":"Masjid Nkonge","district":"Mukono","village":"Nkonge","applicant":"Kasirye pherouz","position":"Member Masjid Nkonge","beneficiaries":367,"date":"2026-04-23"},{"institution":"Katadde Mosque","district":"Wakiso","village":"Katta","applicant":"Rashid Bunya","position":"Committee member","beneficiaries":150,"date":"2026-04-23"},{"institution":"Mbogo children's Foundation","district":"Luweero","village":"Bombo","applicant":"Ssekisambu Abdulkarim Mbogo","position":"Founder","beneficiaries":235,"date":"2026-04-23"},{"institution":"Single mother's group","district":"Luweero","village":"Nkokonjeru","applicant":"Nanyonjo Poline","position":"Chairman","beneficiaries":25,"date":"2026-04-23"},{"institution":"Masjid Rahman","district":"Kampala","village":"Konge","applicant":"Sserunkuma Musa","position":"Secretary","beneficiaries":180,"date":"2026-04-23"},{"institution":"masjid haqqu","district":"Kampala","village":"Lukuli","applicant":"Luzze Abdulmuminu","position":"Imaam","beneficiaries":500,"date":"2026-04-23"},{"institution":"Twahirah kids junior school","district":"Luweero","village":"Busula","applicant":"Kiyemba hamuza","position":"Director","beneficiaries":200,"date":"2026-04-23"},{"institution":"Abaana abava gomba","district":"Gomba","village":"Maddu","applicant":"Semugera swaibu","position":"Chairman","beneficiaries":150,"date":"2026-04-23"},{"institution":"MASGID MUHAJIRIINA KIGOBE NAMUNGOONA","district":"Kampala","village":"KIGOBE","applicant":"SSEKIMPI HUZAIFAH","position":"IMAAM","beneficiaries":360,"date":"2026-04-23"},{"institution":"Masjid Nkonge","district":"Mukono","village":"Nkonge","applicant":"Gawaza kasirye Pherouz","position":"Member","beneficiaries":367,"date":"2026-04-23"},{"institution":"Masjid Salam Lubatu","district":"Wakiso","village":"Lubatu Kitezi","applicant":"Abdunoor","position":"Imam","beneficiaries":350,"date":"2026-04-24"},{"institution":"Bbale primary school","district":"Wakiso","village":"Kira","applicant":"Mawejje faruk","position":"Headteacher","beneficiaries":350,"date":"2026-04-24"},{"institution":"Masjid shuura","district":"Mukono","village":"Ddundu","applicant":"Wakuya Ibrahim","position":"Imam","beneficiaries":500,"date":"2026-04-24"},{"institution":"Masjid latiifa","district":"Mukono","village":"Kyampisi","applicant":"MATAKI SOWED","position":"Imam","beneficiaries":600,"date":"2026-04-24"},{"institution":"Masjid Noor","district":"Luweero","village":"Nakasero zone","applicant":"Kabuye Ashiraf","position":"Secretary","beneficiaries":75,"date":"2026-04-24"},{"institution":"Masjid global Muslim high school","district":"Mukono","village":"Naggalama","applicant":"Wakuya Ibrahim","position":"Deputy adm","beneficiaries":700,"date":"2026-04-24"},{"institution":"Masjid furqan","district":"Mukono","village":"Ddundu","applicant":"Musa kabugo","position":"Imam","beneficiaries":300,"date":"2026-04-24"},{"institution":"Masjid noor","district":"Mukono","village":"Kalagala","applicant":"Nourdiin kakooza","position":"Imam","beneficiaries":400,"date":"2026-04-24"},{"institution":"Masjid taqwa","district":"Mukono","village":"Kawoomya","applicant":"Abubakar semwanga","position":"Imam","beneficiaries":300,"date":"2026-04-24"},{"institution":"Masjid rahma","district":"Mukono","village":"Kyampisi","applicant":"Ssimbwa Abdallar","position":"Imam","beneficiaries":350,"date":"2026-04-24"},{"institution":"Masjid ismail","district":"Mukono","village":"Kalagi","applicant":"Sulaiman sudiiru","position":"Imam","beneficiaries":500,"date":"2026-04-24"},{"institution":"Masjid jami'a","district":"Mukono","village":"Kyabakadde","applicant":"Nsiko Abdallar","position":"Imam","beneficiaries":320,"date":"2026-04-24"},{"institution":"Masjid salaam","district":"Mukono","village":"Kabembe","applicant":"Kitwe ishak","position":"Chairman","beneficiaries":450,"date":"2026-04-24"},{"institution":"Masjid Nkonge","district":"Mukono","village":"Nkonge","applicant":"Gawaza Kasirye Pherouz","position":"Member","beneficiaries":367,"date":"2026-04-24"},{"institution":"Bombo community","district":"Luweero","village":"Namaliga","applicant":"Sirajje kato","position":"Councillor","beneficiaries":800,"date":"2026-04-24"},{"institution":"MARKAZ SUNCITY AL-ISLAMIYYAH","district":"Luweero","village":"SSAMBWE NDEJJE","applicant":"SHK ABDUL-NAASWIR KATEREGGA","position":"DIRECTOR","beneficiaries":250,"date":"2026-04-24"},{"institution":"Matugga kigogwa community","district":"Wakiso","village":"Matuga","applicant":"Hajjat Madina Namatovu","position":"Resident","beneficiaries":100,"date":"2026-04-24"},{"institution":"Mayuge mbaale community","district":"Mayuge","village":"Mbaale","applicant":"Hajjat hasifah","position":"Community resident","beneficiaries":100,"date":"2026-04-24"},{"institution":"Child Emergency Foundation","district":"Kampala","village":"Bukoto","applicant":"Nantale Sarah","position":"Director","beneficiaries":60,"date":"2026-04-24"},{"institution":"Lady Sarah modified primary school","district":"Kampala","village":"Kibuli","applicant":"Ssozi Usamah Ali","position":"Asst head teacher","beneficiaries":200,"date":"2026-04-24"},{"institution":"MASGID NOOR NAMUKOKA LUGALA","district":"Kampala","village":"LUGALA","applicant":"SSEKIMPI ALI","position":"IMAAM","beneficiaries":120,"date":"2026-04-26"},{"institution":"Bukasa","district":"Luweero","village":"Namawojja","applicant":"Nabukera aisha","position":"Mazigid nulu","beneficiaries":10,"date":"2026-04-26"},{"institution":"Ndejje Quality School","district":"Wakiso","village":"Mutungo","applicant":"Nuwagaba Sulaiman Rwomushana","position":"Director","beneficiaries":350,"date":"2026-04-26"},{"institution":"Marcel Kindergarten","district":"Luwero","village":"Lunyolya","applicant":"Nelima Hellen","position":"Director","beneficiaries":250,"date":"2026-04-27"},{"institution":"Marcel Kindergarten","district":"Luwero","village":"Lunyolya","applicant":"Nelima Hellen","position":"Director","beneficiaries":250,"date":"2026-04-27"},{"institution":"Bukasa p/s","district":"Luweero","village":"Namawoja","applicant":"Nabukera Aisha","position":"Teacher","beneficiaries":200,"date":"2026-04-27"},{"institution":"Misc day and boarding primary school","district":"Wakiso","village":"Bukasa","applicant":"Nadawi kaluuma","position":"Director","beneficiaries":900,"date":"2026-04-27"},{"institution":"KISAASI TWAALE","district":"Kampala","village":"Kisaasi","applicant":"Galimaka Nadawi","position":"County Sheikh","beneficiaries":1000,"date":"2026-04-27"},{"institution":"Kisaasi county","district":"Kampala","village":"Kisaasi","applicant":"Galimaka Nadawi","position":"County Sheikh","beneficiaries":1000,"date":"2026-04-27"},{"institution":"Masgid Omar Bombo town","district":"Luwero","village":"Namaliga west","applicant":"Nsamba Ahmed","position":"Imaam","beneficiaries":600,"date":"2026-04-27"},{"institution":"Kisaasi county","district":"Kampala","village":"Kisaasi","applicant":"Galimaka Nadawi","position":"County Sheikh","beneficiaries":1000,"date":"2026-04-27"},{"institution":"Kalagala boda stage","district":"Luwero","village":"Kalagala","applicant":"Sulaiman","position":"Chairperson","beneficiaries":60,"date":"2026-04-27"},{"institution":"AGALYA EWAMU BODA STAGE","district":"Luwero","village":"BOMBO TOWN","applicant":"SSEBULIBA","position":"CHAIRPERSON","beneficiaries":100,"date":"2026-04-27"},{"institution":"BAJO &ALENA STAGE","district":"Luwero","village":"BAJJO","applicant":"BASHIR","position":"CHAIRPERSON","beneficiaries":100,"date":"2026-04-27"},{"institution":"POST BANK STAGE","district":"Luwero","village":"BOMBO TOWN","applicant":"WILSON","position":"Chairperson","beneficiaries":80,"date":"2026-04-27"},{"institution":"BOMBO POLICE STATION","district":"Luwero","village":"Bombo","applicant":"MUWONGE","position":"Member of police","beneficiaries":25,"date":"2026-04-27"},{"institution":"KARONGOOTI BODA STAGE","district":"Luwero","village":"BOMBO TOWN","applicant":"DENIS","position":"CHAIRPERSON","beneficiaries":30,"date":"2026-04-27"},{"institution":"SWEET VALLEY SCHOOL","district":"Luwero","village":"Kibajwe","applicant":"MATOVU ABDULRAHMAN","position":"IMAAM","beneficiaries":400,"date":"2026-04-28"},{"institution":"Masjid noor","district":"Luwero","village":"Degeya","applicant":"Shk Kakeembo","position":"Imaam","beneficiaries":300,"date":"2026-04-28"},{"institution":"Masjid shukran","district":"Luwero","village":"Degeya","applicant":"Imaam Ali","position":"Imaam","beneficiaries":100,"date":"2026-04-28"},{"institution":"Masjid Abdallah","district":"Luwero","village":"Degeya","applicant":"Haruna","position":"Imaam","beneficiaries":100,"date":"2026-04-28"},{"institution":"Lukole community","district":"Luwero","village":"Lukole","applicant":"Ukasha","position":"Religious leader","beneficiaries":350,"date":"2026-04-28"},{"institution":"Masjid taqwa","district":"Luwero","village":"Wabitungulu","applicant":"Olambe","position":"Imaam","beneficiaries":400,"date":"2026-04-28"},{"institution":"KALEERWE COMMUNITY","district":"Wakiso","village":"Kavule","applicant":"Ubaidha","position":"Imaam","beneficiaries":700,"date":"2026-04-28"},{"institution":"Masjid kasangati","district":"Wakiso","village":"Kasangati","applicant":"Mubiito","position":"Imaam","beneficiaries":625,"date":"2026-04-28"},{"institution":"KAZINGA","district":"Wakiso","village":"Kazinga","applicant":"Mubiito","position":"Political leader","beneficiaries":100,"date":"2026-04-28"},{"institution":"Lugoba high school","district":"Wakiso","village":"Lugoba","applicant":"Isa","position":"Headteacher","beneficiaries":300,"date":"2026-04-28"},{"institution":"JJOKOLERA COMMUNITY","district":"Wakiso","village":"Jjokolera","applicant":"Jaffar","position":"Cordinator","beneficiaries":550,"date":"2026-04-28"},{"institution":"Gulfa center","district":"Wakiso","village":"Kaleerwe","applicant":"Katongole Erias","position":"Founder","beneficiaries":100,"date":"2026-04-28"},{"institution":"UGANDA MUSLIM WOMEN ASSOCIATION","district":"Wakiso","village":"Kaleerwe","applicant":"Hajjat Asia","position":"Chairperson","beneficiaries":500,"date":"2026-04-28"},{"institution":"BOMBO POLICE","district":"Luwero","village":"Bombo","applicant":"OC","position":"Oc","beneficiaries":180,"date":"2026-04-28"},{"institution":"KASUBI MORDERN","district":"Wakiso","village":"Kasubi","applicant":"Hakim","position":"Principal","beneficiaries":370,"date":"2026-04-28"},{"institution":"KING FAHAD","district":"Kampala","village":"Busega","applicant":"ABDUL MAJID","position":"Teacher","beneficiaries":500,"date":"2026-04-28"},{"institution":"JJOKOLERA","district":"Wakiso","village":"Jjokolera","applicant":"Haruna","position":"Chairperson","beneficiaries":250,"date":"2026-04-28"},{"institution":"LUWERO DISTRICT","district":"Luwero","village":"Luwero","applicant":"DEO","position":"DEO","beneficiaries":600,"date":"2026-04-28"},{"institution":"MASJID ABUBAKR","district":"Luwero","village":"Kkonde","applicant":"Kiggundu","position":"Mobiliser","beneficiaries":120,"date":"2026-04-28"},{"institution":"MUSLIM STUDENTS ASSOCIATION UGANDA","district":"Luwero","village":"Kalule","applicant":"DR HARUNA","position":"Chairperson","beneficiaries":345,"date":"2026-04-28"},{"institution":"PATIENT HEARTS PRI SCHOOL","district":"Wakiso","village":"Matugga","applicant":"BADRU KIKULU","position":"Principal","beneficiaries":100,"date":"2026-04-28"},{"institution":"MASJID TAQUWA","district":"Mukono","village":"Ssenta","applicant":"DR SSENDAGI","position":"Imaam","beneficiaries":297,"date":"2026-04-28"},{"institution":"Majid tawheed","district":"Luwero","village":"Kalagala","applicant":"Ahmed","position":"Imaam","beneficiaries":139,"date":"2026-04-28"},{"institution":"MASJID NUR","district":"Luwero","village":"Kalagala","applicant":"Mukyala kkaaya","position":"Amiira","beneficiaries":200,"date":"2026-04-28"},{"institution":"Salaama lubatu","district":"Wakiso","village":"Kiteezi","applicant":"Yasin","position":"Imaam","beneficiaries":450,"date":"2026-04-28"},{"institution":"NAGGALAMA","district":"Mukono","village":"Naggalama","applicant":"Ahmad","position":"Imaam","beneficiaries":130,"date":"2026-04-28"},{"institution":"Masjid nur","district":"Nakasongola","village":"Nakasongola","applicant":"Abubakr","position":"Imaam","beneficiaries":110,"date":"2026-04-28"},{"institution":"Kikulu","district":"Wakiso","village":"Kisasi","applicant":"Wasswa","position":"Headteacher","beneficiaries":132,"date":"2026-04-28"},{"institution":"Kilyammuli community","district":"Kayunga","village":"Bugerere","applicant":"Ssemwogeree","position":"Mobiliser","beneficiaries":356,"date":"2026-04-28"},{"institution":"Majid hijra","district":"Wakiso","village":"Matugga","applicant":"Yasin","position":"Imaam","beneficiaries":170,"date":"2026-04-28"},{"institution":"Masjid kitiko","district":"Wakiso","village":"Kitiko","applicant":"Katamba","position":"Imaam","beneficiaries":100,"date":"2026-04-28"},{"institution":"Majid kigoogwa","district":"Wakiso","village":"Kigoogwa","applicant":"Madina","position":"Amiira","beneficiaries":140,"date":"2026-04-28"},{"institution":"KISIMU","district":"Wakiso","village":"Kisimu","applicant":"Jamila","position":"Amiira","beneficiaries":140,"date":"2026-04-28"},{"institution":"Masjid tawheed","district":"Wakiso","village":"Nansana","applicant":"Abdulrazaq","position":"Imaam","beneficiaries":130,"date":"2026-04-28"},{"institution":"Aqswa","district":"Mukono","village":"Kyaliwajjala","applicant":"Abdul shakur","position":"Imaam","beneficiaries":125,"date":"2026-04-28"},{"institution":"Sham Islamic charity foundation","district":"Wakiso District","village":"Kilyowa village","applicant":"Numan Muhammad Mbogo","position":"Director","beneficiaries":214,"date":"2026-04-28"},{"institution":"Child Emergency Foundation International","district":"Kampala","village":"Bukoto","applicant":"Nantale Sarah","position":"Co. Founder","beneficiaries":60,"date":"2026-04-28"},{"institution":"Namwatulira c/u community","district":"Luweero","village":"Namwatulira","applicant":"Nambuya Grace","position":"Coordinator","beneficiaries":250,"date":"2026-04-28"},{"institution":"Classic junior school","district":"Wakiso","village":"Manyangwa zitemwa","applicant":"Katende Badru","position":"School sheikh","beneficiaries":250,"date":"2026-04-28"},{"institution":"NAMBI UMEA P/S","district":"Luweero","village":"Nambi","applicant":"Nakaweesa jalia","position":"Teacher","beneficiaries":250,"date":"2026-04-28"},{"institution":"Mecca Muslim Secondary School","district":"Luwero","village":"Kigulu Zone","applicant":"Mawube Abdul Salamu","position":"Director","beneficiaries":200,"date":"2026-04-28"}];
-
-const SYSTEM_PROMPT = `You are an AI analyst for the Sweet Valley Community Organization (SVCO) Kurban 2026 programme. You have access to all 122 application records collected via KoBoToolbox between April 21–28, 2026.
+function buildSystemPrompt() {
+  const records = window.ALL_RECORDS || FALLBACK_RECORDS;
+  const stats = window.LIVE_STATS || computeStats(records);
+  return `You are an AI analyst for the Sweet Valley Community Organization (SVCO) Kurban 2026 programme. You have access to all ${records.length} application records collected via KoBoToolbox.
 
 DATASET SUMMARY:
-- Total applications: 122
-- Total valid beneficiaries requested: ~33,787 (avg 277 per application)
-- Districts: Luwero (42), Wakiso (38), Kampala (19), Mukono (17), Others (6)
-- Peak day: April 28 (41 submissions)
-- Distribution completed: 85 kg meat to 200 people (Mosques via SSEBUNYA HUSSEIN)
+- Total applications: ${records.length}
+- Total beneficiaries requested: ${stats.totalBene.toLocaleString()}
+- Districts: ${stats.distSorted.slice(0,5).map(d=>d[0]+' ('+d[1]+')').join(', ')}
+- Peak day: ${stats.peakDay[0]} (${stats.peakDay[1]} submissions)
 
 ALL APPLICATION RECORDS (JSON):
-${JSON.stringify(ALL_RECORDS, null, 1)}
+${JSON.stringify(records, null, 1)}
 
 Answer questions concisely and accurately using ONLY this data. When listing records, format them clearly. If asked for counts or sums, compute them from the records. Note: Luwero, Luweero, and LUWEERO all refer to the same district.`;
+}
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 const chatEl = document.getElementById('chatMessages');
@@ -324,7 +478,7 @@ async function sendMsg() {
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
-        system: SYSTEM_PROMPT,
+        system: buildSystemPrompt(),
         messages: history
       })
     });
