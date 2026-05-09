@@ -196,8 +196,8 @@ footer strong{color:var(--emerald)}
 // ════════════════════════════════════════════
 // CONFIG — edit these to change behaviour
 // ════════════════════════════════════════════
-const SHEET_ID = '1yViImAToS7SLnMw0QxRMPAYBk6FPpveiwokClhZfOgY';
-const GID      = '579236491';
+const SHEET_ID = '1lBvkcZDCOZXW4y9RfjEYCMoWIcQqNuPNZx-K7r6lEIw';
+const GID      = '1634124940';
 const KG_PER_PERSON = 2;
 
 // RAG thresholds (no formal targets yet — using observed benchmarks)
@@ -451,32 +451,72 @@ function render(d){
 // ════════════════════════════════════════════
 // FETCH
 // ════════════════════════════════════════════
+async function fetchCSV(){
+  const direct = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+  const proxies = [
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    url => `https://cors-anywhere.herokuapp.com/${url}`,
+  ];
+
+  // Try direct first
+  try {
+    const r = await fetch(direct, {mode:'cors'});
+    if(r.ok){
+      const t = await r.text();
+      if(!t.includes('<html') && !t.includes('Sign in') && t.length > 50) return t;
+    }
+  } catch(e){}
+
+  // Try each proxy in turn
+  for(const proxy of proxies){
+    try{
+      document.getElementById('loading-text').textContent = 'Trying alternate connection…';
+      const r = await fetch(proxy(direct));
+      if(r.ok){
+        const t = await r.text();
+        if(!t.includes('<html') && !t.includes('Sign in') && t.length > 50) return t;
+      }
+    }catch(e){}
+  }
+
+  // Final fallback: load via script tag (JSONP-style using allorigins)
+  return new Promise((resolve, reject) => {
+    document.getElementById('loading-text').textContent = 'Connecting via secure relay…';
+    const jsonUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(direct)}`;
+    fetch(jsonUrl)
+      .then(r => r.json())
+      .then(data => {
+        if(data && data.contents && !data.contents.includes('<html')) resolve(data.contents);
+        else reject(new Error('private'));
+      })
+      .catch(() => reject(new Error('all_failed')));
+  });
+}
+
 async function loadData(){
   document.getElementById('loading').style.display='flex';
-  document.getElementById('loading-text').textContent='Fetching live data from Google Sheets…';
-  const url=`https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+  document.getElementById('loading-text').textContent='Connecting to Google Sheets…';
   try{
-    const resp=await fetch(url);
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const text=await resp.text();
-    if(text.includes('<html')||text.includes('Sign in')) throw new Error('private');
-    const rows=parseCSV(text);
-    if(rows.length<2) throw new Error('empty');
+    const text = await fetchCSV();
+    const rows = parseCSV(text);
+    if(rows.length < 2) throw new Error('empty');
     render(processData(rows));
     document.getElementById('loading').style.display='none';
   }catch(err){
-    const isPrivate=err.message==='private';
+    const isPrivate = err.message === 'private';
     document.getElementById('loading').innerHTML=`
       <div class="error-box">
-        <h3>${isPrivate?'🔒 Sheet is Not Public':'⚠️ Could Not Load Data'}</h3>
-        ${isPrivate?`
-        <p>Your Google Sheet is set to private. Fix it in 3 steps:</p>
+        <h3>${isPrivate ? '🔒 Sheet is Not Public' : '⚠️ Could Not Load Data'}</h3>
+        ${isPrivate ? `
+        <p>Your Google Sheet needs to be public. Fix in 3 steps:</p>
         <ol>
           <li>Open your Google Sheet</li>
-          <li>Click <strong>Share</strong> (top-right) → <strong>Change to anyone with the link</strong></li>
-          <li>Set permission to <strong>Viewer</strong>, then refresh this page</li>
-        </ol>`:
-        `<p>Could not fetch data.<br>Error: <code>${err.message}</code></p>`}
+          <li>Click <strong>Share</strong> → <strong>Change to anyone with the link</strong></li>
+          <li>Set to <strong>Viewer</strong> → Done, then refresh</li>
+        </ol>` :
+        `<p>All connection attempts failed.<br><small>Error: <code>${err.message}</code></small><br><br>
+        Make sure your sheet is set to <strong>"Anyone with the link – Viewer"</strong> and try again.</p>`}
         <button class="retry-btn" onclick="loadData()">⟳ Try Again</button>
       </div>`;
   }
