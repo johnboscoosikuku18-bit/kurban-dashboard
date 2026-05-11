@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SVCO Kurban 2026 — Live Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=DM+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --emerald:#1a6b4a; --emerald-light:#2d9c6e; --emerald-pale:#e8f5ef;
+  --gold:#c9922a; --gold-light:#f0c060;
+  --sand:#f7f3ed; --ink:#1a1a2e; --ink-muted:#4a4a6a;
+  --white:#ffffff; --border:#e2dcd4;
+  --rag-red:#dc2626; --rag-amber:#d97706; --rag-green:#16a34a;
+  --rag-red-bg:#fef2f2; --rag-amber-bg:#fffbeb; --rag-green-bg:#f0fdf4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--sand);color:var(--ink);min-height:100vh}
+header{background:linear-gradient(135deg,var(--emerald) 0%,#0f4a33 100%);color:white;padding:28px 40px;position:relative;overflow:hidden}
+header::before{content:'';position:absolute;top:-40px;right:-40px;width:220px;height:220px;border-radius:50%;background:rgba(201,146,42,0.15)}
+.header-inner{max-width:1240px;margin:0 auto;position:relative;z-index:1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+.header-title h1{font-family:'Amiri',serif;font-size:2rem;color:var(--gold-light)}
+.header-title p{font-size:0.82rem;opacity:0.7;margin-top:3px;font-family:'DM Mono',monospace}
+.header-right{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.live-badge{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);border-radius:20px;padding:5px 14px;font-size:0.75rem;font-family:'DM Mono',monospace}
+.pulse{width:8px;height:8px;border-radius:50%;background:#4ade80;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.5;transform:scale(1.3)}}
+.refresh-btn{background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);color:white;border-radius:8px;padding:5px 14px;font-size:0.75rem;cursor:pointer;font-family:'DM Mono',monospace;transition:background 0.2s}
+.refresh-btn:hover{background:rgba(255,255,255,0.25)}
+.rag-bar{padding:14px 40px;transition:background 0.5s}
+.rag-bar.green{background:var(--rag-green)}
+.rag-bar.amber{background:var(--rag-amber)}
+.rag-bar.red{background:var(--rag-red)}
+.rag-inner{max-width:1240px;margin:0 auto;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.rag-label{color:white;font-weight:700;font-size:1rem}
+.rag-desc{color:rgba(255,255,255,0.88);font-size:0.82rem}
+.rag-chips{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
+.rag-chip{background:rgba(255,255,255,0.2);border-radius:6px;padding:4px 10px;font-size:0.78rem;color:white;font-family:'DM Mono',monospace}
+.loading-overlay{position:fixed;inset:0;background:rgba(247,243,237,0.96);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:16px}
+.spinner{width:48px;height:48px;border:4px solid var(--border);border-top:4px solid var(--emerald);border-radius:50%;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-family:'DM Mono',monospace;color:var(--ink-muted);font-size:0.85rem;text-align:center;max-width:360px}
+.error-box{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:28px;max-width:560px;text-align:left;line-height:1.7}
+.error-box h3{color:var(--rag-red);margin-bottom:10px;font-size:1.1rem}
+.error-box p{font-size:0.84rem;color:var(--ink-muted)}
+.error-box ol{font-size:0.84rem;color:var(--ink-muted);padding-left:18px;margin-top:8px}
+.error-box code{background:#fee2e2;padding:2px 6px;border-radius:4px;font-family:'DM Mono',monospace;font-size:0.78rem}
+.retry-btn{margin-top:16px;background:var(--emerald);color:white;border:none;border-radius:8px;padding:9px 20px;cursor:pointer;font-family:'DM Mono',monospace;font-size:0.82rem}
+main{max-width:1240px;margin:0 auto;padding:28px 24px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px}
+.kpi-card{background:var(--white);border-radius:12px;padding:20px 18px;border:1px solid var(--border);position:relative;overflow:hidden;transition:transform 0.2s,box-shadow 0.2s}
+.kpi-card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,0.07)}
+.kpi-accent{position:absolute;top:0;left:0;right:0;height:3px;border-radius:12px 12px 0 0}
+.kpi-label{font-size:0.7rem;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-muted);font-weight:700}
+.kpi-value{font-size:1.9rem;font-weight:700;margin:6px 0 3px;font-family:'DM Mono',monospace;line-height:1}
+.kpi-sub{font-size:0.73rem;color:var(--ink-muted)}
+.kpi-rag{display:inline-flex;align-items:center;border-radius:4px;padding:2px 8px;font-size:0.7rem;font-weight:700;margin-top:6px}
+.kpi-rag.green{background:var(--rag-green-bg);color:var(--rag-green)}
+.kpi-rag.amber{background:var(--rag-amber-bg);color:var(--rag-amber)}
+.kpi-rag.red{background:var(--rag-red-bg);color:var(--rag-red)}
+.rag-panel{background:var(--white);border-radius:12px;border:1px solid var(--border);padding:22px;margin-bottom:22px}
+.section-title{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--ink-muted);margin-bottom:14px;display:flex;align-items:center;gap:7px}
+.section-title .dot{width:7px;height:7px;border-radius:50%}
+.rag-indicators{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.rag-ind{border-radius:10px;padding:14px 16px;border:1px solid transparent}
+.rag-ind.green{background:var(--rag-green-bg);border-color:#bbf7d0}
+.rag-ind.amber{background:var(--rag-amber-bg);border-color:#fde68a}
+.rag-ind.red{background:var(--rag-red-bg);border-color:#fecaca}
+.rag-ind-label{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;margin-bottom:4px}
+.rag-ind.green .rag-ind-label{color:var(--rag-green)}
+.rag-ind.amber .rag-ind-label{color:var(--rag-amber)}
+.rag-ind.red .rag-ind-label{color:var(--rag-red)}
+.rag-ind-value{font-size:1.35rem;font-weight:700;font-family:'DM Mono',monospace;color:var(--ink)}
+.rag-ind-desc{font-size:0.72rem;color:var(--ink-muted);margin-top:3px}
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:768px){.charts-row{grid-template-columns:1fr}}
+.chart-card{background:var(--white);border-radius:12px;padding:20px;border:1px solid var(--border)}
+.chart-card.wide{grid-column:1/-1}
+canvas{max-height:250px}
+.table-card{background:var(--white);border-radius:12px;border:1px solid var(--border);padding:20px;margin-bottom:16px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:0.82rem}
+th{background:var(--emerald);color:white;padding:9px 13px;text-align:left;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;white-space:nowrap}
+th:first-child{border-radius:6px 0 0 6px}th:last-child{border-radius:0 6px 6px 0}
+td{padding:9px 13px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--emerald-pale)}
+.num{font-family:'DM Mono',monospace;font-weight:500}
+.bar-wrap{display:flex;align-items:center;gap:6px}
+.mini-bar{height:5px;border-radius:3px;background:var(--emerald-light);min-width:3px}
+.total-row td{background:var(--emerald-pale);font-weight:700;color:var(--emerald)}
+.kg-badge{background:var(--gold);color:white;border-radius:4px;padding:2px 8px;font-size:0.7rem;font-family:'DM Mono',monospace;white-space:nowrap}
+.kg-badge.em{background:var(--emerald)}
+.chip{display:inline-flex;align-items:center;border-radius:4px;padding:2px 7px;font-size:0.68rem;font-weight:700}
+.chip.green{background:var(--rag-green-bg);color:var(--rag-green)}
+.chip.amber{background:var(--rag-amber-bg);color:var(--rag-amber)}
+.chip.red{background:var(--rag-red-bg);color:var(--rag-red)}
+.callout{background:#fffbeb;border:1px solid #fde68a;border-left:4px solid var(--gold);border-radius:8px;padding:11px 15px;font-size:0.78rem;color:#78350f;margin-bottom:18px;display:flex;gap:9px;align-items:flex-start}
+footer{text-align:center;padding:18px;font-size:0.72rem;color:var(--ink-muted);font-family:'DM Mono',monospace;border-top:1px solid var(--border);margin-top:8px}
+footer strong{color:var(--emerald)}
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="spinner"></div>
+  <div class="loading-text" id="loading-text">Connecting to Google Sheets…</div>
+</div>
+
+<header>
+  <div class="header-inner">
+    <div class="header-title">
+      <h1>🕌 SVCO Kurban 2026</h1>
+      <p>Live Progress, RAG Status &amp; Meat Distribution Dashboard</p>
+    </div>
+    <div class="header-right">
+      <div class="live-badge"><div class="pulse"></div><span id="last-updated">Loading…</span></div>
+      <button class="refresh-btn" onclick="loadData()">⟳ Refresh</button>
+    </div>
+  </div>
+</header>
+
+<div class="rag-bar green" id="rag-bar">
+  <div class="rag-inner">
+    <span class="rag-label" id="rag-label">Loading…</span>
+    <span class="rag-desc" id="rag-desc"></span>
+    <div class="rag-chips" id="rag-chips"></div>
+  </div>
+</div>
+
+<main>
+  <div class="kpi-grid" id="kpi-grid"></div>
+  <div class="rag-panel">
+    <div class="section-title"><div class="dot" style="background:var(--emerald)"></div>RAG Performance Indicators</div>
+    <div class="rag-indicators" id="rag-indicators"></div>
+  </div>
+  <div class="callout">
+    <span>⚠️</span>
+    <div><strong>Data notes:</strong> Beneficiary values above 100,000 are excluded (likely phone numbers entered in wrong field). District names are normalised on load. Meat calculated at <strong>2 kg per beneficiary</strong>. RAG thresholds are based on observed patterns — update the <code>T</code> config once formal targets are set.</div>
+  </div>
+  <div class="charts-row">
+    <div class="chart-card wide">
+      <div class="section-title"><div class="dot" style="background:var(--emerald)"></div>Cumulative Applications Over Time</div>
+      <canvas id="timelineChart"></canvas>
+    </div>
+  </div>
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="section-title"><div class="dot" style="background:var(--gold)"></div>Applications by District</div>
+      <canvas id="districtChart"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="section-title"><div class="dot" style="background:var(--rag-red)"></div>Beneficiary Group Size Distribution</div>
+      <canvas id="sizeChart"></canvas>
+    </div>
+  </div>
+  <div class="charts-row">
+    <div class="chart-card wide">
+      <div class="section-title"><div class="dot" style="background:#2563eb"></div>Total Beneficiaries by District</div>
+      <canvas id="beneChart"></canvas>
+    </div>
+  </div>
+  <div class="table-card">
+    <div class="section-title" style="margin-bottom:14px"><div class="dot" style="background:var(--gold)"></div>Meat Distribution by District — 2 kg / Beneficiary</div>
+    <table><thead><tr><th>District</th><th>Applications</th><th>Beneficiaries</th><th>KG Required</th><th>% of Total KG</th><th>Share</th><th>Status</th></tr></thead>
+    <tbody id="meat-table"></tbody></table>
+  </div>
+  <div class="table-card">
+    <div class="section-title" style="margin-bottom:14px"><div class="dot" style="background:var(--emerald)"></div>Daily Submission Log</div>
+    <table><thead><tr><th>Date</th><th>New Applications</th><th>Cumulative Total</th><th>Progress</th></tr></thead>
+    <tbody id="daily-table"></tbody></table>
+  </div>
+</main>
+
+<footer>SVCO Kurban 2026 &nbsp;|&nbsp; <strong>Live</strong> from Google Sheets &nbsp;|&nbsp; Auto-refreshes on page load &nbsp;|&nbsp; GitHub Pages</footer>
+
+<script>
+// ══════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════
+const SHEET_ID      = '1lBvkcZDCOZXW4y9RfjEYCMoWIcQqNuPNZx-K7r6lEIw';
+const GID           = '1634124940';
+const KG_PER_PERSON = 2;
+const T = {
+  applications: { amber:50,  green:100 },
+  districts:    { amber:5,   green:8   },
+  avgBene:      { amber:150, green:250 },
+};
+
+// ══════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════
+const fmt = n => Number(n).toLocaleString();
+const now = () => new Date().toLocaleString('en-GB',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+const setMsg = m => { const el=document.getElementById('loading-text'); if(el) el.textContent=m; };
+
+function rag(v,t){ return v>=t.green?'green':v>=t.amber?'amber':'red'; }
+function ragIcon(r){ return r==='green'?'🟢':r==='amber'?'🟡':'🔴'; }
+function ragWord(r){ return r==='green'?'On Track':r==='amber'?'Monitor':'Off Track'; }
+
+const DMAP={'luweero':'Luwero','luwero':'Luwero','wakiso district':'Wakiso','wikiso':'Wakiso','kampala':'Kampala'};
+function normD(d){
+  if(!d||!d.trim()) return 'Unknown';
+  const low=d.trim().toLowerCase();
+  return DMAP[low]||(d.trim().charAt(0).toUpperCase()+d.trim().slice(1).toLowerCase());
+}
+
+function isValidCSV(t){
+  return t && t.length>100 && !t.includes('<!DOCTYPE') && !t.includes('<html') && !t.includes('Sign in');
+}
+
+// ══════════════════════════════════════════════════
+// CSV PARSER
+// ══════════════════════════════════════════════════
+function parseCSV(text){
+  const lines=text.trim().split('\n');
+  const headers=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const cols=[];let cur='',inQ=false;
+    for(const ch of lines[i]){
+      if(ch==='"'){inQ=!inQ;}
+      else if(ch===','&&!inQ){cols.push(cur.trim());cur='';}
+      else cur+=ch;
+    }
+    cols.push(cur.trim());
+    if(cols.length<2) continue;
+    const row={};
+    headers.forEach((h,j)=>row[h]=(cols[j]||'').replace(/"/g,'').trim());
+    rows.push(row);
+  }
+  return rows;
+}
+
+// ══════════════════════════════════════════════════
+// FETCH — tries 7 methods in sequence
+// ══════════════════════════════════════════════════
+async function tryGet(url){
+  try{
+    const r=await fetch(url,{cache:'no-store'});
+    if(!r.ok) return null;
+    const t=await r.text();
+    return isValidCSV(t)?t:null;
+  }catch(e){return null;}
+}
+
+async function fetchCSV(){
+  const API = 'https://script.google.com/macros/s/AKfycbwP83QLZ7eCLvSxetIfCdcEzRCqhH3XOUbjxJWmzFhqhV0_PzK4aNHfYkpyKpawtCwDFQ/exec';
+  const PROXY1 = `https://corsproxy.io/?${encodeURIComponent(API)}`;
+  const PROXY2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(API)}`;
+  const PROXY3 = `https://api.allorigins.win/get?url=${encodeURIComponent(API)}`;
+
+  // 1. Direct with no-cors redirect follow
+  setMsg('Attempt 1: Direct connection…');
+  try{
+    const r = await fetch(API, {method:'GET', redirect:'follow'});
+    const text = await r.text();
+    const j = JSON.parse(text);
+    if(Array.isArray(j) && j.length > 0){ setMsg('Connected!'); return jsonToCSV(j); }
+  }catch(e){ console.log('Direct failed:', e.message); }
+
+  // 2. corsproxy.io
+  setMsg('Attempt 2: Relay connection…');
+  try{
+    const r = await fetch(PROXY1);
+    const text = await r.text();
+    const j = JSON.parse(text);
+    if(Array.isArray(j) && j.length > 0){ setMsg('Connected!'); return jsonToCSV(j); }
+  }catch(e){ console.log('Proxy1 failed:', e.message); }
+
+  // 3. allorigins raw
+  setMsg('Attempt 3: Relay 2…');
+  try{
+    const r = await fetch(PROXY2);
+    const text = await r.text();
+    const j = JSON.parse(text);
+    if(Array.isArray(j) && j.length > 0){ setMsg('Connected!'); return jsonToCSV(j); }
+  }catch(e){ console.log('Proxy2 failed:', e.message); }
+
+  // 4. allorigins JSON wrapper
+  setMsg('Attempt 4: Final relay…');
+  try{
+    const r = await fetch(PROXY3);
+    const wrapper = await r.json();
+    if(wrapper && wrapper.contents){
+      const j = JSON.parse(wrapper.contents);
+      if(Array.isArray(j) && j.length > 0){ setMsg('Connected!'); return jsonToCSV(j); }
+    }
+  }catch(e){ console.log('Proxy3 failed:', e.message); }
+
+  throw new Error('all_failed');
+}
+
+function jsonToCSV(rows){
+  if(!rows||!rows.length) return '';
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.join(',')];
+  rows.forEach(row=>{
+    const vals = headers.map(h=>{
+      const v = String(row[h]??'').replace(/"/g,'""');
+      return v.includes(',')||v.includes('"')||v.includes('\n')?`"${v}"`:v;
+    });
+    lines.push(vals.join(','));
+  });
+  return lines.join('\n');
+}
+
+// ══════════════════════════════════════════════════
+// DATA PROCESSING
+// ══════════════════════════════════════════════════
+function processData(rows){
+  const valid=rows.filter(r=>r['Institution Name']&&r['Institution Name']!=='Institution Name'&&r['Institution Name'].length>1);
+  valid.forEach(r=>{
+    r._dist=normD(r['District']);
+    const raw=parseFloat(r['No. of Beneficiaries']);
+    r._bene=(!isNaN(raw)&&raw>0&&raw<100000)?raw:null;
+    r._date=r['Submission Date']?new Date(r['Submission Date']):null;
+  });
+
+  const totalApps=valid.length;
+  const hasBene=valid.filter(r=>r._bene!==null);
+  const totalBene=Math.round(hasBene.reduce((s,r)=>s+r._bene,0));
+  const totalKg=totalBene*KG_PER_PERSON;
+  const avgBene=hasBene.length?Math.round(totalBene/hasBene.length):0;
+  const sorted=hasBene.map(r=>r._bene).sort((a,b)=>a-b);
+  const mid=Math.floor(sorted.length/2);
+  const medBene=Math.round(sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2);
+
+  const distApps={},distBene={};
+  valid.forEach(r=>{
+    distApps[r._dist]=(distApps[r._dist]||0)+1;
+    if(r._bene!==null) distBene[r._dist]=(distBene[r._dist]||0)+r._bene;
+  });
+
+  const dayMap={};
+  valid.forEach(r=>{
+    if(r._date&&!isNaN(r._date)){
+      const d=r._date.toLocaleDateString('en-GB',{day:'2-digit',month:'short'});
+      dayMap[d]=(dayMap[d]||0)+1;
+    }
+  });
+  const mOrd={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+  const sDays=Object.keys(dayMap).sort((a,b)=>{
+    const pa=a.split(' '),pb=b.split(' ');
+    return(mOrd[pa[1]]-mOrd[pb[1]])||parseInt(pa[0])-parseInt(pb[0]);
+  });
+  let cum=0;
+  const cumTimeline=sDays.map(d=>({date:d,daily:dayMap[d],cum:cum+=dayMap[d]}));
+
+  const bands={'1–100':0,'101–250':0,'251–500':0,'501–1000':0,'1000+':0};
+  hasBene.forEach(r=>{
+    if(r._bene<=100)bands['1–100']++;
+    else if(r._bene<=250)bands['101–250']++;
+    else if(r._bene<=500)bands['251–500']++;
+    else if(r._bene<=1000)bands['501–1000']++;
+    else bands['1000+']++;
+  });
+
+  return{totalApps,totalBene,totalKg,avgBene,medBene,
+    totalDistricts:Object.keys(distApps).length,
+    distApps,distBene,cumTimeline,bands,
+    outliers:valid.length-hasBene.length};
+}
+
+// ══════════════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════════════
+let charts={};
+function destroyCharts(){Object.values(charts).forEach(c=>c.destroy());charts={};}
+const PAL=['#1a6b4a','#c9922a','#2563eb','#c0392b','#7c3aed','#0891b2','#d97706','#059669','#dc2626','#6366f1'];
+Chart.defaults.font.family="'Plus Jakarta Sans',sans-serif";
+Chart.defaults.color='#4a4a6a';
+
+function render(d){
+  const rA=rag(d.totalApps,T.applications);
+  const rD=rag(d.totalDistricts,T.districts);
+  const rV=rag(d.avgBene,T.avgBene);
+  const overall=[rA,rD,rV].every(r=>r==='green')?'green':([rA,rD,rV].some(r=>r==='red')?'red':'amber');
+
+  document.getElementById('rag-bar').className='rag-bar '+overall;
+  document.getElementById('rag-label').textContent=ragIcon(overall)+' Programme '+(overall==='green'?'On Track':overall==='amber'?'Needs Monitoring':'Needs Attention');
+  document.getElementById('rag-desc').textContent=` · ${d.totalApps} applications · ${fmt(d.totalBene)} beneficiaries · ${d.totalDistricts} districts`;
+  document.getElementById('rag-chips').innerHTML=[`${fmt(d.totalKg)} kg needed`,`${d.totalApps} applications`,`${d.totalDistricts} districts`].map(t=>`<div class="rag-chip">${t}</div>`).join('');
+
+  document.getElementById('kpi-grid').innerHTML=[
+    {label:'Total Applications',value:fmt(d.totalApps),sub:`Across ${d.totalDistricts} districts`,color:'var(--emerald)',r:rA,rtxt:`${ragIcon(rA)} ${ragWord(rA)}`},
+    {label:'Total Beneficiaries',value:fmt(d.totalBene),sub:'Valid records only',color:'#2563eb',r:rV,rtxt:`Avg ${fmt(d.avgBene)} / app`},
+    {label:'KG Meat Required',value:fmt(d.totalKg)+' kg',sub:'@ 2 kg per beneficiary',color:'var(--gold)',r:'amber',rtxt:`${fmt(d.totalKg)} kg total`},
+    {label:'Districts Reached',value:d.totalDistricts,sub:'of 10 known districts',color:'var(--rag-red)',r:rD,rtxt:`${ragIcon(rD)} ${ragWord(rD)}`},
+    {label:'Avg Bene / Application',value:fmt(d.avgBene),sub:`Median: ${fmt(d.medBene)}`,color:'#7c3aed',r:rV,rtxt:`${ragIcon(rV)} ${ragWord(rV)}`},
+    {label:'Data Quality',value:d.outliers===0?'✓ Clean':d.outliers+' flagged',sub:d.outliers+' records excluded',color:d.outliers>0?'var(--gold)':'var(--emerald)',r:d.outliers===0?'green':'amber',rtxt:d.outliers===0?'All records valid':'Review flagged'},
+  ].map(k=>`<div class="kpi-card"><div class="kpi-accent" style="background:${k.color}"></div><div class="kpi-label">${k.label}</div><div class="kpi-value" style="color:${k.color}">${k.value}</div><div class="kpi-sub">${k.sub}</div><div class="kpi-rag ${k.r}">${k.rtxt}</div></div>`).join('');
+
+  document.getElementById('rag-indicators').innerHTML=[
+    {label:'Application Volume',value:fmt(d.totalApps),desc:'≥100 = Green · ≥50 = Amber · <50 = Red',r:rA},
+    {label:'Geographic Spread',value:d.totalDistricts+' districts',desc:'≥8 districts = Green · ≥5 = Amber',r:rD},
+    {label:'Avg Reach / Institution',value:fmt(d.avgBene)+' bene',desc:'≥250 = Green · ≥150 = Amber',r:rV},
+    {label:'Total Meat Required',value:fmt(d.totalKg)+' kg',desc:`${fmt(d.totalBene)} bene × ${KG_PER_PERSON} kg`,r:'amber'},
+    {label:'Data Completeness',value:d.outliers===0?'100%':((1-(d.outliers/d.totalApps))*100).toFixed(1)+'%',desc:`${d.outliers} suspect records removed`,r:d.outliers===0?'green':'amber'},
+    {label:'Submission Activity',value:d.cumTimeline.length+' active days',desc:'Days with ≥1 submission',r:d.cumTimeline.length>=7?'green':'amber'},
+  ].map(i=>`<div class="rag-ind ${i.r}"><div class="rag-ind-label">${i.label}</div><div class="rag-ind-value">${i.value}</div><div class="rag-ind-desc">${i.desc}</div></div>`).join('');
+
+  destroyCharts();
+
+  charts.tl=new Chart(document.getElementById('timelineChart'),{
+    type:'line',
+    data:{labels:d.cumTimeline.map(r=>r.date),datasets:[
+      {label:'Cumulative',data:d.cumTimeline.map(r=>r.cum),borderColor:'#1a6b4a',backgroundColor:'rgba(26,107,74,0.1)',fill:true,tension:0.4,pointRadius:4,pointHoverRadius:6,borderWidth:2.5,yAxisID:'y'},
+      {label:'Daily New',data:d.cumTimeline.map(r=>r.daily),backgroundColor:'rgba(201,146,42,0.5)',borderColor:'#c9922a',borderWidth:1.5,type:'bar',yAxisID:'y1'},
+    ]},
+    options:{responsive:true,maintainAspectRatio:true,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'top',labels:{padding:14,font:{size:11}}}},
+      scales:{
+        y:{beginAtZero:true,grid:{color:'#f0ebe3'},ticks:{font:{family:"'DM Mono'",size:10}},title:{display:true,text:'Cumulative',font:{size:10}}},
+        y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},ticks:{font:{family:"'DM Mono'",size:10}},title:{display:true,text:'Daily',font:{size:10}}},
+        x:{grid:{display:false},ticks:{font:{size:10}}}
+      }
+    }
+  });
+
+  const dN=Object.keys(d.distApps).sort((a,b)=>d.distApps[b]-d.distApps[a]);
+  charts.da=new Chart(document.getElementById('districtChart'),{
+    type:'bar',
+    data:{labels:dN,datasets:[{label:'Applications',data:dN.map(k=>d.distApps[k]),backgroundColor:dN.map((_,i)=>PAL[i%PAL.length]+'cc'),borderColor:dN.map((_,i)=>PAL[i%PAL.length]),borderWidth:1.5,borderRadius:4}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},
+      scales:{x:{beginAtZero:true,grid:{color:'#f0ebe3'},ticks:{font:{family:"'DM Mono'",size:10}}},y:{grid:{display:false},ticks:{font:{size:10}}}}}
+  });
+
+  charts.sz=new Chart(document.getElementById('sizeChart'),{
+    type:'doughnut',
+    data:{labels:Object.keys(d.bands),datasets:[{data:Object.values(d.bands),backgroundColor:['#1a6b4a','#2d9c6e','#c9922a','#2563eb','#c0392b'],borderWidth:2,borderColor:'#f7f3ed'}]},
+    options:{responsive:true,maintainAspectRatio:true,cutout:'58%',plugins:{legend:{position:'bottom',labels:{padding:10,font:{size:11}}}}}
+  });
+
+  const bN=Object.keys(d.distBene).sort((a,b)=>d.distBene[b]-d.distBene[a]);
+  charts.bn=new Chart(document.getElementById('beneChart'),{
+    type:'bar',
+    data:{labels:bN,datasets:[{label:'Beneficiaries',data:bN.map(k=>Math.round(d.distBene[k])),backgroundColor:bN.map((_,i)=>PAL[i%PAL.length]+'bb'),borderColor:bN.map((_,i)=>PAL[i%PAL.length]),borderWidth:1.5,borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:true,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,grid:{color:'#f0ebe3'},ticks:{font:{family:"'DM Mono'",size:10},callback:v=>v>=1000?(v/1000).toFixed(1)+'k':v}},x:{grid:{display:false},ticks:{font:{size:10}}}}}
+  });
+
+  let gB=0,gK=0,gA=0;
+  document.getElementById('meat-table').innerHTML=
+    Object.keys(d.distBene).sort((a,b)=>d.distBene[b]-d.distBene[a]).map(dist=>{
+      const bene=Math.round(d.distBene[dist]||0);
+      const kg=bene*KG_PER_PERSON;
+      const apps=d.distApps[dist]||0;
+      const p=d.totalKg?(kg/d.totalKg*100).toFixed(1):0;
+      const r=rag(apps,T.applications);
+      gB+=bene;gK+=kg;gA+=apps;
+      return `<tr><td><strong>${dist}</strong></td><td class="num">${fmt(apps)}</td><td class="num">${fmt(bene)}</td><td><span class="kg-badge">${fmt(kg)} kg</span></td><td class="num">${p}%</td><td><div class="bar-wrap"><div class="mini-bar" style="width:${Math.max(parseFloat(p),2)}%;max-width:90px"></div><span style="font-size:0.7rem;color:var(--ink-muted)">${p}%</span></div></td><td><span class="chip ${r}">${ragIcon(r)} ${ragWord(r)}</span></td></tr>`;
+    }).join('')+
+    `<tr class="total-row"><td>TOTAL</td><td class="num">${fmt(gA)}</td><td class="num">${fmt(gB)}</td><td><span class="kg-badge em">${fmt(gK)} kg</span></td><td class="num">100%</td><td></td><td></td></tr>`;
+
+  document.getElementById('daily-table').innerHTML=d.cumTimeline.map(r=>{
+    const p=Math.round(r.cum/d.totalApps*100);
+    return `<tr><td>${r.date}</td><td class="num">+${r.daily}</td><td class="num"><strong>${r.cum}</strong> / ${d.totalApps}</td><td><div class="bar-wrap"><div class="mini-bar" style="width:${p}%;max-width:140px"></div><span style="font-size:0.7rem;color:var(--ink-muted)">${p}%</span></div></td></tr>`;
+  }).join('');
+
+  document.getElementById('last-updated').textContent='Live · '+now();
+}
+
+// ══════════════════════════════════════════════════
+// LOAD
+// ══════════════════════════════════════════════════
+async function loadData(){
+  document.getElementById('loading').style.display='flex';
+  try{
+    const text=await fetchCSV();
+    const rows=parseCSV(text);
+    if(rows.length<2) throw new Error('empty_sheet');
+    render(processData(rows));
+    document.getElementById('loading').style.display='none';
+  }catch(err){
+    document.getElementById('loading').innerHTML=`
+      <div class="error-box">
+        <h3>⚠️ Could Not Load Data</h3>
+        <p>All 8 connection methods failed. The most common cause is the sheet is not fully public.</p>
+        <p style="margin-top:10px"><strong>Please do BOTH of these in your Google Sheet:</strong></p>
+        <ol>
+          <li>Click <strong>Share</strong> → set to <strong>"Anyone with the link — Viewer"</strong></li>
+          <li>Click <strong>File → Share → Publish to web</strong> → select your sheet tab → click <strong>Publish</strong></li>
+        </ol>
+        <p style="margin-top:10px;font-size:0.76rem;color:#aaa">Error: <code>${err.message}</code></p>
+        <p style="margin-top:8px;font-size:0.76rem;color:#aaa">Open browser Console (F12) and check for red errors — paste them in the chat.</p>
+        <button class="retry-btn" onclick="loadData()">⟳ Try Again</button>
+      </div>`;
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
